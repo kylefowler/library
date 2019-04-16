@@ -1,11 +1,15 @@
 'use strict'
 
-const {getTree, getPlaylist, getMeta} = require('./list')
+const {getTree, getTreeForDriveSlug, getPlaylist, getMeta, getOrgDrives} = require('./list')
+const log = require('./logger')
+
+const driveType = process.env.DRIVE_TYPE
+
 
 exports.parseUrl = async (path) => {
   const segments = path.split('/')
   const root = segments[1]
-  const tree = await getTree()
+  const tree = driveType == 'org' ? await getTreeForDriveSlug(root) : await getTree()
   const [data, parent] = await retrieveDataForPath(path, tree) || []
   const {id} = data || {}
   const meta = getMeta(id) || {}
@@ -14,7 +18,8 @@ exports.parseUrl = async (path) => {
 }
 
 async function retrieveDataForPath(path, tree) {
-  const segments = path.split('/').slice(1).filter((s) => s.length)
+  const sliceStart = driveType == 'org' ? 2 : 1
+  const segments = path.split('/').slice(sliceStart).filter((s) => s.length)
 
   let pointer = tree
   let parent = null

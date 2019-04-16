@@ -14,20 +14,51 @@ const docs = require('./docs')
 const driveType = process.env.DRIVE_TYPE
 const driveId = process.env.DRIVE_ID
 
-let currentTree = null // current route data by slug
+let availableTrees = null // current route data by slug
 let docsInfo = {} // doc info by id
 let tags = {} // tags to doc id
 let driveBranches = {} // map of id to nodes
 const playlistInfo = {} // playlist info by id
+const orgDrives = {}
 
+<<<<<<< HEAD
 // normally return the cached tree data
 // if it does not exist yet, return a promise for the new tree
 exports.getTree = () => currentTree || updateTree()
+=======
+exports.getTree = async () => {
+  if (availableTrees) {
+    return availableTrees[0]
+  }
+  await updateTree()
+}
+>>>>>>> a first pass at supporting organizations and all the team drives
+
+exports.getAllTrees = async () => {
+  if (!availableTrees) {
+    await updateTree()
+  }
+  return availableTrees
+}
+
+exports.getTreeForDriveSlug = async (id) => {
+  if (!availableTrees) {
+    await updateTree()
+  }
+  const drives = Object.values(orgDrives).map((d) => docs.cleanName(docs.slugify(d.name)))
+  return availableTrees[drives.indexOf(id)]
+}
+
+exports.hasDrive = (slug) => {
+  return Object.values(orgDrives).filter((d) => docs.cleanName(docs.slugify(d.name)) === slug).length > 0
+}
 
 // exposes docs metadata
 exports.getMeta = (id) => {
   return docsInfo[id]
 }
+
+exports.getOrgDrives = () => orgDrives
 
 exports.getDocsInfo = () => docsInfo
 
@@ -66,9 +97,17 @@ async function updateTree() {
     const authClient = await getAuth()
 
     const drive = google.drive({version: 'v3', auth: authClient})
-    const files = await fetchAllFiles({drive, driveType})
-
-    currentTree = produceTree(files, driveId)
+    
+    if (driveType == 'org') {
+      const driveFileMapping = await listDrives({drive, driveType})
+      const trees = produceTree(driveFileMapping)
+      availableTrees = trees
+    } else {
+      const files = await fetchAllFiles({drive, driveType, parentIds: [driveId]})
+      const dummy = {}
+      dummy[driveId] = files
+      availableTrees = produceTree(dummy)
+    }
 
     const count = Object.values(docsInfo)
       .filter((f) => f.resourceType !== 'folder')
@@ -76,7 +115,7 @@ async function updateTree() {
 
     log.debug(`Current file count in drive: ${count}`)
 
-    return currentTree
+    return availableTrees
   })
 }
 
@@ -102,9 +141,24 @@ function getOptions(id) {
   }
 }
 
-async function fetchAllFiles({nextPageToken: pageToken, listSoFar = [], parentIds = [driveId], driveType = 'team', drive} = {}) {
-  const options = getOptions(parentIds)
+async function listDrives({nextPageToken: pageToken, driveType = 'team', drive} = {}) {
+  const {data} = await drive.teamdrives.list();
 
+  const {teamDrives, nextPageToken} = data;
+
+  const driveFiles = {}
+  for (var i = 0; i < teamDrives.length; i++) {
+    const id = teamDrives[i].id
+
+    orgDrives[id] = teamDrives[i]
+    driveFiles[id] = await fetchAllFiles({drive, driveType, parentIds: [id]})
+  }
+
+  return driveFiles
+}
+
+async function fetchAllFiles({nextPageToken: pageToken, parentIds, listSoFar = [], driveType = 'team', drive} = {}) {
+  const options = getOptions(parentIds)
   if (pageToken) {
     options.pageToken = pageToken
   }
@@ -148,7 +202,11 @@ async function fetchAllFiles({nextPageToken: pageToken, listSoFar = [], parentId
   return combined
 }
 
-function produceTree(files, firstParent) {
+function produceTree(fileMap, parentDriveName = "") {
+  const driveIds = Object.keys(fileMap)
+  const files = driveIds.reduce(function (r, k) {
+      return r.concat(fileMap[k]);
+  }, [])
   // maybe group into folders first?
   // then build out tree, by traversing top down
   // keep in mind that files can have multiple parents
@@ -170,7 +228,7 @@ function produceTree(files, firstParent) {
       resourceType: cleanResourceType(resource.mimeType),
       sort: determineSort(name),
       slug,
-      isTrashCan: slug === 'trash' && parents.includes(driveId)
+      isTrashCan: slug === 'trash' && driveIds.filter((d) => parents.includes(d)).length > 0
     })
 
     // add the id of this item to a list of tags
@@ -202,12 +260,35 @@ function produceTree(files, firstParent) {
     return [byParent, byId, tagIds]
   }, [{}, {}, {}])
 
+  if (driveType == 'org') {
+    const orgParent = {children: [], home: null}
+    const orgResource = Object.assign({}, {}, {
+      id: 'foursquare',
+      name: "foursquare",
+      prettyName: "foursquare",
+      tags: [],
+      resourceType: cleanResourceType('org'),
+      sort: determineSort(),
+      slug: "foursquare",
+      isTrashCan: false,
+      parents: []
+    })
+    byId['foursquare'] = orgResource
+
+    Object.keys(byParent).forEach((p) => {
+      if (orgDrives[p]) {
+        orgParent.children.push(p)
+      }
+    })
+    byParent['foursquare'] = orgParent
+  }
+
   const oldInfo = docsInfo
   const oldBranches = driveBranches
   tags = tagIds
-  docsInfo = addPaths(byId) // update our outer cache w/ data including path information
+  docsInfo = addPaths(byId, driveIds) // update our outer cache w/ data including path information
   driveBranches = byParent
-  return buildTreeFromData(firstParent, {info: oldInfo, tree: oldBranches})
+  return driveIds.map((d) => buildTreeFromData(d, {info: oldInfo, tree: oldBranches}))
 }
 
 // do we care about parent ids? maybe not?
@@ -242,7 +323,7 @@ function buildTreeFromData(rootParent, previousData, breadcrumb) {
   }, Object.assign({}, parentNode, { children: {} }))
 }
 
-function addPaths(byId) {
+function addPaths(byId, driveIds) {
   return Object.values(byId)
     .reduce((memo, data) => {
       const parentData = derivePathInfo(data, byId)
@@ -253,7 +334,7 @@ function addPaths(byId) {
   function derivePathInfo(item) {
     const {parents, slug, webViewLink: drivePath, isHome, resourceType, tags} = item || {}
     const parentId = parents[0]
-    const hasParent = parentId && parentId !== driveId
+    const hasParent = parentId && !driveIds.includes(parentId)
     const parent = byId[parentId]
     const renderInLibrary = isSupported(resourceType) || tags.includes('playlist')
 
@@ -262,7 +343,9 @@ function addPaths(byId) {
       return {}
     }
 
-    const parentInfo = hasParent ? derivePathInfo(parent) : {path: '/', tags: []}
+    const teamDriveDefault = parentId || "foursquare"
+    const rootDrive = (driveType == 'org' && !hasParent && teamDriveDefault != "foursquare") ? '/' + docs.cleanName(docs.slugify(orgDrives[teamDriveDefault].name)) : ''
+    const parentInfo = hasParent ? derivePathInfo(parent) : {path: rootDrive + '/', tags: []}
     const libraryPath = isHome ? parentInfo.path : path.join(parentInfo.path, slug)
     // the end of the path will be item.slug
     return {

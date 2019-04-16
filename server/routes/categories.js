@@ -11,6 +11,8 @@ const {fetchDoc, cleanName, fetchByline} = require('../docs')
 const {getTemplates, sortDocs, stringTemplate} = require('../utils')
 const {parseUrl} = require('../urlParser')
 
+const driveType = process.env.DRIVE_TYPE
+
 router.get('*', handleCategory)
 module.exports = router
 
@@ -86,10 +88,12 @@ function prepareContextualData(data, url, breadcrumb, parent, slug) {
   const childrenLinks = createRelatedList(children || {}, self, url)
 
   // extend the breadcrumb with render data
+  const sliceStart = driveType === 'org' ? 2 : 1 // TODO(kyle): have the breadcrumbs include the team drive
   const parentLinks = url
     .split('/')
-    .slice(1, -1) // ignore the base empty string and self
+    .slice(sliceStart, -1) // ignore the base empty string and self
     .map((segment, i, arr) => {
+      log.debug(breadcrumbInfo)
       return {
         url: `/${arr.slice(0, i + 1).join('/')}`,
         name: cleanName(breadcrumbInfo[i].name),

@@ -14,8 +14,8 @@ const playlists = require('./routes/playlists')
 const readingHistory = require('./routes/readingHistory')
 const errorPages = require('./routes/errors')
 
-const userAuth = requireWithFallback('userAuth')
-const customCsp = requireWithFallback('csp')
+const userAuth = require('./userAuth')
+const customCsp = require('./csp')
 
 const app = express()
 

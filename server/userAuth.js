@@ -81,6 +81,7 @@ function setUserInfo(req) {
     }
     return
   }
+
   req.userInfo = req.userInfo ? req.userInfo : {
     email: req.session.passport.user.emails[0].value,
     userId: req.session.passport.user.id,
