@@ -13,6 +13,7 @@ const docs = require('./docs')
 
 const driveType = process.env.DRIVE_TYPE
 const driveId = process.env.DRIVE_ID
+const driveOrgName = process.env.DRIVE_ORG_NAME
 
 let availableTrees = null // current route data by slug
 let docsInfo = {} // doc info by id
@@ -263,24 +264,38 @@ function produceTree(fileMap, parentDriveName = "") {
   if (driveType == 'org') {
     const orgParent = {children: [], home: null}
     const orgResource = Object.assign({}, {}, {
-      id: 'foursquare',
-      name: "foursquare",
-      prettyName: "foursquare",
+      id: driveOrgName,
+      name: driveOrgName,
+      prettyName: driveOrgName,
       tags: [],
       resourceType: cleanResourceType('org'),
       sort: determineSort(),
-      slug: "foursquare",
+      slug: driveOrgName,
       isTrashCan: false,
       parents: []
     })
-    byId['foursquare'] = orgResource
+    byId[driveOrgName] = orgResource
 
     Object.keys(byParent).forEach((p) => {
       if (orgDrives[p]) {
+        const curDrive = orgDrives[p]
         orgParent.children.push(p)
+        // add the drive to byId?
+        const driveResource = Object.assign({}, {}, {
+          id: p,
+          name: curDrive.name,
+          prettyName: curDrive.name,
+          tags: [],
+          resourceType: cleanResourceType('teamDrive'),
+          sort: determineSort(),
+          slug: docs.cleanName(docs.slugify(curDrive.name)),
+          isTrashCan: false,
+          parents: [driveOrgName]
+        })
+        byId[p] = driveResource
       }
     })
-    byParent['foursquare'] = orgParent
+    byParent[driveOrgName] = orgParent
   }
 
   const oldInfo = docsInfo
@@ -295,6 +310,11 @@ function produceTree(fileMap, parentDriveName = "") {
 function buildTreeFromData(rootParent, previousData, breadcrumb) {
   const {children, home} = driveBranches[rootParent] || {}
   const parentInfo = docsInfo[rootParent] || {}
+
+  if (!breadcrumb) {
+    log.debug("Parent info: " + rootParent)
+  }
+  breadcrumb = breadcrumb ? breadcrumb : [{ id: rootParent, slug: Object.values(orgDrives).filter((d) => d.id === rootParent).map((d) => docs.cleanName(docs.slugify(d.name))) }]
 
   const parentNode = {
     nodeType: children ? 'branch' : 'leaf',
@@ -343,9 +363,13 @@ function addPaths(byId, driveIds) {
       return {}
     }
 
-    const teamDriveDefault = parentId || "foursquare"
-    const rootDrive = (driveType == 'org' && !hasParent && teamDriveDefault != "foursquare") ? '/' + docs.cleanName(docs.slugify(orgDrives[teamDriveDefault].name)) : ''
+    const teamDriveDefault = parentId || driveOrgName
+    // && teamDriveDefault != driveOrgName
+    const rootDrive = (driveType == 'org' && !hasParent ) ? '/' + docs.cleanName(docs.slugify(orgDrives[teamDriveDefault].name)) : ''
     const parentInfo = hasParent ? derivePathInfo(parent) : {path: rootDrive + '/', tags: []}
+    if (parentInfo.path === undefined) {
+      log.debug("Things: " + slug + " Other " + parentInfo.path + " root " + rootDrive)
+    }
     const libraryPath = isHome ? parentInfo.path : path.join(parentInfo.path, slug)
     // the end of the path will be item.slug
     return {
