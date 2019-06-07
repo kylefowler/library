@@ -22,18 +22,12 @@ let driveBranches = {} // map of id to nodes
 const playlistInfo = {} // playlist info by id
 const orgDrives = {}
 
-<<<<<<< HEAD
-// normally return the cached tree data
-// if it does not exist yet, return a promise for the new tree
-exports.getTree = () => currentTree || updateTree()
-=======
 exports.getTree = async () => {
   if (availableTrees) {
     return availableTrees[0]
   }
   await updateTree()
 }
->>>>>>> a first pass at supporting organizations and all the team drives
 
 exports.getAllTrees = async () => {
   if (!availableTrees) {
@@ -363,14 +357,11 @@ function addPaths(byId, driveIds) {
       return {}
     }
 
+    // Clean up all this
     const teamDriveDefault = parentId || driveOrgName
-    // && teamDriveDefault != driveOrgName
-    const rootDrive = (driveType == 'org' && !hasParent ) ? '/' + docs.cleanName(docs.slugify(orgDrives[teamDriveDefault].name)) : ''
+    const rootDrive = (driveType == 'org' && !hasParent && teamDriveDefault != driveOrgName) ? '/' + docs.cleanName(docs.slugify(orgDrives[teamDriveDefault].name)) : ''
     const parentInfo = hasParent ? derivePathInfo(parent) : {path: rootDrive + '/', tags: []}
-    if (parentInfo.path === undefined) {
-      log.debug("Things: " + slug + " Other " + parentInfo.path + " root " + rootDrive)
-    }
-    const libraryPath = isHome ? parentInfo.path : path.join(parentInfo.path, slug)
+    const libraryPath = isHome ? parentInfo.path : path.join((parentInfo.path === undefined ? '/' + item.slug : parentInfo.path), slug)
     // the end of the path will be item.slug
     return {
       folder: Object.assign({}, parent, parentInfo), // make sure folder contains path
